@@ -30,6 +30,7 @@ find_package(microcdr REQUIRED)
 find_package(zenohpico REQUIRED)
 
 # Build options
+option(BUILD_DEMO                       "Build examples/demos" OFF)
 option(BUILD_DOCUMENTATION              "Use doxygen to create product documentation" OFF)
 
 option(WITH_ZEPHYR                      "Build for Zephyr RTOS" OFF)
