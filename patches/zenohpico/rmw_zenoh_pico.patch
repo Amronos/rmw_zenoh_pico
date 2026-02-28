@@ -1,0 +1,224 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9c06617d..a7ca944d 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION 3.14)
+ 
+ file(READ ${CMAKE_CURRENT_SOURCE_DIR}/version.txt version)
+ 
+-project(zenohpico VERSION ${version} LANGUAGES C)
++project(zenohpico VERSION ${version} LANGUAGES C CXX)
+ 
+ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
+ include(helpers)
+@@ -47,16 +47,20 @@ option(WITH_ZEPHYR "Build for Zephyr RTOS" OFF)
+ option(WITH_FREERTOS_PLUS_TCP "Build for FreeRTOS RTOS and FreeRTOS-Plus-TCP network stack" OFF)
+ option(WITH_FREERTOS_LWIP "Build for FreeRTOS RTOS and LWIP (Lightweight IP) network stack" OFF)
+ option(WITH_RPI_PICO "Build for Raspberry Pi Pico" OFF)
++option(WITH_ARDUINO_ESP32 "Build for ESP32 on Arduino" OFF)
++option(WITH_ARDUINO_OPENCR "Build for OPENCR on Arduino" OFF)
++option(WITH_ESPIDF "Build for ESP32 on espidf" OFF)
++option(WITH_MBED "Build for mbed" OFF)
+ set(ZENOH_LOG "" CACHE STRING "Use this to set the ZENOH_LOG variable")
+ set(ZENOH_LOG_PRINT "" CACHE STRING "Use this to set the ZENOH_LOG_PRINT variable")
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
+ if(CMAKE_EXPORT_COMPILE_COMMANDS)
+-  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES 
++  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES
+       ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+ endif()
+ 
+ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+-  if (BUILD_SHARED_LIBS) 
++  if (BUILD_SHARED_LIBS)
+     set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+   endif()
+ elseif(CMAKE_SYSTEM_NAME MATCHES "Generic")
+@@ -159,7 +163,7 @@ endfunction()
+ 
+ pico_add_compile_definition(ZENOH_C_STANDARD=${CMAKE_C_STANDARD})
+ 
+-if (NOT CMAKE_BUILD_TYPE MATCHES "RELEASE" OR "Release") 
++if (NOT CMAKE_BUILD_TYPE MATCHES "RELEASE" OR "Release")
+   # while in development, use timestamp for patch version:
+   string(TIMESTAMP PROJECT_VERSION_PATCH "%Y%m%ddev")
+   set(PROJECT_VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
+@@ -190,6 +194,15 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Generic")
+     pico_add_compile_definition(ZENOH_FREERTOS_PLUS_TCP)
+   elseif(WITH_FREERTOS_LWIP)
+     pico_add_compile_definition(ZENOH_FREERTOS_LWIP)
++  elseif(WITH_ARDUINO_ESP32)
++    pico_add_compile_definition(ZENOH_ARDUINO_ESP32)
++  elseif(WITH_ARDUINO_OPENCR)
++    pico_add_compile_definition(ZENOH_ARDUINO_OPENCR)
++    pico_add_compile_definition(Z_FEATURE_MULTI_THREAD=0)
++  elseif(WITH_ESPIDF)
++    pico_add_compile_definition(ZENOH_ESPIDF)
++  elseif(WITH_MBED)
++    pico_add_compile_definition(ZENOH_MBED)
+   endif()
+ elseif(CMAKE_SYSTEM_NAME MATCHES "PICO") # Raspberry Pi Pico Series
+   pico_add_compile_definition(ZENOH_RPI_PICO)
+@@ -200,7 +213,7 @@ else()
+ endif()
+ 
+ # Compiler definition
+-message("Compilers in use: ${CMAKE_C_COMPILER_ID}, ${CMAKE_CXX_COMPILER_ID}")
++message(STATUS "Compilers in use: ${CMAKE_C_COMPILER_ID}, ${CMAKE_CXX_COMPILER_ID}")
+ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+   pico_add_compile_definition(ZENOH_COMPILER_CLANG)
+ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "GNU")
+@@ -401,6 +414,23 @@ if(PICO_SHARED)
+       $<INSTALL_INTERFACE:include>)
+ endif()
+ 
++# Platformio definition
++if (PLATFORMIO_CPPPATH)
++  if(PICO_STATIC)
++    target_include_directories(${Libname}_static
++      PRIVATE
++      ${PLATFORMID_CPPPATH}
++    )
++  endif()
++
++  if(PICO_SHARED)
++    target_include_directories(${Libname}_shared
++      PRIVATE
++      ${PLATFORMIO_CPPPATH}
++    )
++  endif()
++endif()
++
+ # TLS support via Mbed TLS
+ if(Z_FEATURE_LINK_TLS)
+   find_package(PkgConfig REQUIRED)
+@@ -490,6 +520,18 @@ elseif(WITH_FREERTOS_LWIP)
+ elseif(WITH_RPI_PICO)
+   file (GLOB Sources_RPI_Pico "src/system/rpi_pico/*.c")
+   list(APPEND Sources ${Sources_RPI_Pico})
++elseif(WITH_ARDUINO_ESP32)
++  file (GLOB Sources_arduino_esp32 "src/system/arduino/esp32/*")
++  list(APPEND Sources ${Sources_arduino_esp32})
++elseif(WITH_ARDUINO_OPENCR)
++  file (GLOB Sources_arduino_opencr "src/system/arduino/opencr/*")
++  list(APPEND Sources ${Sources_arduino_opencr})
++elseif(WITH_ESPIDF)
++  file (GLOB Sources_espidf "src/zenohpico/src/system/espidf/*")
++  list(APPEND Sources ${Sources_espidf})
++elseif(WITH_MBED)
++  file (GLOB Sources_mbed "src/zenohpico/src/system/espidf/*")
++  list(APPEND Sources ${Sources_mbed})
+ elseif(CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin" OR CMAKE_SYSTEM_NAME MATCHES "BSD" OR POSIX_COMPATIBLE)
+   file (GLOB Sources_Unix "src/system/unix/*.c" "src/system/unix/link/*.c")
+   list(APPEND Sources ${Sources_Unix})
+diff --git a/PackageConfig.cmake.in b/PackageConfig.cmake.in
+index 7c9567f2..05a6e9ed 100644
+--- a/PackageConfig.cmake.in
++++ b/PackageConfig.cmake.in
+@@ -28,6 +28,30 @@ endif()
+ 
+ if(@BUILD_SHARED_LIBS@)
+   add_library(zenohpico::lib ALIAS zenohpico::zenohpico_shared)
++  set(zenohpico_LIBRARIES "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_LIBDIR@/@STATICLIB@libzenohpico.so")
+ else()
+   add_library(zenohpico::lib ALIAS zenohpico::zenohpico_static)
++  set(zenohpico_LIBRARIES "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_LIBDIR@/@STATICLIB@libzenohpico.a")
++endif()
++
++set(zenohpico_INCLUDE_DIRS "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_INCLUDEDIR@")
++
++if(CMAKE_SYSTEM_NAME MATCHES "Linux")
++  add_compile_definitions(ZENOH_LINUX)
++elseif(POSIX_COMPATIBLE)
++  add_compile_definitions(ZENOH_LINUX)
++elseif(CMAKE_SYSTEM_NAME MATCHES "BSD")
++  add_compile_definitions(ZENOH_BSD)
++elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
++  add_compile_definitions(ZENOH_MACOS)
++elseif(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
++  add_compile_definitions(EMSCRIPTEN)
++elseif(CMAKE_SYSTEM_NAME MATCHES "Windows")
++  add_compile_definitions(ZENOH_WINDOWS)
++elseif(CMAKE_SYSTEM_NAME MATCHES "Generic")
++  if(WITH_ZEPHYR)
++    add_compile_definitions(ZENOH_ZEPHYR)
++  elseif(WITH_FREERTOS_PLUS_TCP)
++    add_compile_definitions(ZENOH_FREERTOS_PLUS_TCP)
++  endif()
+ endif()
+diff --git a/colcon.pkg b/colcon.pkg
+index 51ae41f2..f018f679 100644
+--- a/colcon.pkg
++++ b/colcon.pkg
+@@ -1,8 +1,4 @@
+ {
+-    "name": "zenoh_pico",
+-    "type": "cmake",
+-    "cmake-args":[
+-        "-DTESTS=OFF",
+-        "-DEXAMPLES=OFF",
+-    ],
++    "name": "zenohpico",
++    "type": "cmake"
+ }
+diff --git a/include/zenoh-pico.h b/include/zenoh-pico.h
+index fb3d55e7..7f2ab3a8 100644
+--- a/include/zenoh-pico.h
++++ b/include/zenoh-pico.h
+@@ -17,10 +17,10 @@
+ #ifndef ZENOH_PICO_H
+ #define ZENOH_PICO_H
+ 
+-#define ZENOH_PICO "1.5.0"
++#define ZENOH_PICO "1.7.2"
+ #define ZENOH_PICO_MAJOR 1
+-#define ZENOH_PICO_MINOR 5
+-#define ZENOH_PICO_PATCH 0
++#define ZENOH_PICO_MINOR 7
++#define ZENOH_PICO_PATCH 2
+ #define ZENOH_PICO_TWEAK
+ 
+ #include "zenoh-pico/api/advanced_publisher.h"
+diff --git a/library.json b/library.json
+index 59d84849..a43f0ed5 100644
+--- a/library.json
++++ b/library.json
+@@ -1,6 +1,6 @@
+ {
+     "name": "zenoh-pico",
+-    "version": "1.2.1.0",
++    "version": "1.7.2",
+     "description": "The Eclipse Zenoh: Zero Overhead Pub/sub, Store/Query and Compute. It unifies data in motion, data in-use, data at rest and computations. It carefully blends traditional pub/sub with geo-distributed storages, queries and computations, while retaining a level of time and space efficiency that is well beyond any of the mainstream stacks. Zenoh-Pico is the implementation able to scale down to extremely constrainded devices and networks.",
+     "keywords": [
+         "pubsub",
+@@ -43,4 +43,4 @@
+     "build": {
+         "extraScript": "extra_script.py"
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/system/arduino/esp32/system.c b/src/system/arduino/esp32/system.c
+index 52e00885..15f237e3 100644
+--- a/src/system/arduino/esp32/system.c
++++ b/src/system/arduino/esp32/system.c
+@@ -126,7 +126,18 @@ z_result_t _z_task_join(_z_task_t *task) {
+ 
+ z_result_t _z_task_detach(_z_task_t *task) {
+     // Note: task/thread detach not supported on FreeRTOS API, so we force its deletion instead.
+-    return _z_task_cancel(task);
++    // return _z_task_cancel(task);
++
++    // WORKAROUND:
++    // This function is also called from the lease task.
++    // It then executes z_reopen() of Z_FEATURE_AUTO_RECONNECT.
++    // However, if you call vTaskDelete(), your task will disappear, so the desired function will not be executed.
++    // THIS PATCH IS A TEMPORARY SOLUTION UNTIL AN OFFICIAL SOLUTION IS RELEASED BY THE ZENOH-PICO COMMUNITY.
++
++    TaskHandle_t xHandle = xTaskGetCurrentTaskHandle();
++    if (task->handle != xHandle) return _z_task_cancel(task);
++
++    return _Z_RES_OK;
+ }
+ 
+ z_result_t _z_task_cancel(_z_task_t *task) {
